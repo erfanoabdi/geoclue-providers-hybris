@@ -1,0 +1,27 @@
+Source: geoclue-providers-hybris
+Section: misc
+Priority: optional
+Build-Depends: qtbase5-dev,
+               qtbase5-dev-tools,
+               qt5-qmake,
+               debhelper,
+               dbus,
+               android-headers,
+               libhardware-dev,
+               libgbinder-dev,
+Maintainer: Giuseppe Corti <giuseppe.corti@protonmail.com>
+Standards-Version: 4.3.0
+Homepage: https://github.com/hybris-mobian/geoclue-providers-hybris
+
+Package: geoclue-providers-hybris-hal
+Architecture: any
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+Description: Geoinformation Service Hybris Provider.
+
+Package: geoclue-provider-hybris-binder
+Architecture: any
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         libgbinder,
+Description: Geoinformation Service Hybris Provider (binder).
