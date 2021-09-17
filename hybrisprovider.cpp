@@ -28,15 +28,6 @@
 #include <QtDBus/QDBusConnection>
 #include <QtDBus/QDBusMessage>
 
-#include <networkmanager.h>
-#include <networkservice.h>
-
-#include <qofonomanager.h>
-#include <qofonoconnectionmanager.h>
-#include <qofonoconnectioncontext.h>
-
-#include <qofonoextmodemmanager.h>
-
 #include <strings.h>
 #include <sys/time.h>
 
@@ -151,9 +142,7 @@ HybrisProvider::HybrisProvider(QObject *parent)
 :   QObject(parent), m_backend(Q_NULLPTR),
     m_status(StatusUnavailable), m_positionInjectionConnected(false), m_xtraDownloadReply(Q_NULLPTR), m_xtraServerIndex(0),
     m_requestedConnect(false), m_gpsStarted(false),
-    m_networkManager(new NetworkManager(this)), m_cellularTechnology(Q_NULLPTR),
-    m_ofonoExtModemManager(new QOfonoExtModemManager(this)),
-    m_connectionManager(new QOfonoConnectionManager(this)), m_connectionContext(Q_NULLPTR), m_ntpSocket(Q_NULLPTR),
+    m_ntpSocket(Q_NULLPTR),
     m_agpsEnabled(false), m_agpsOnlineEnabled(false), m_useForcedNtpInject(false), m_useForcedXtraInject(false),
     m_suplPort(0)
 {
@@ -174,19 +163,6 @@ HybrisProvider::HybrisProvider(QObject *parent)
     new SatelliteAdaptor(this);
 
     m_manager = new QNetworkAccessManager(this);
-
-    connect(m_networkManager, SIGNAL(technologiesChanged()), this, SLOT(technologiesChanged()));
-    connect(m_networkManager, SIGNAL(stateChanged(QString)), this, SLOT(stateChanged(QString)));
-
-    technologiesChanged();
-
-    connect(m_ofonoExtModemManager, SIGNAL(defaultDataModemChanged(QString)),
-            this, SLOT(defaultDataModemChanged(QString)));
-
-    connect(m_connectionManager, SIGNAL(validChanged(bool)),
-            this, SLOT(connectionManagerValidChanged()));
-
-    defaultDataModemChanged(m_ofonoExtModemManager->defaultDataModem());
 
     QDBusConnection connection = QDBusConnection::sessionBus();
 
@@ -555,35 +531,6 @@ void HybrisProvider::injectPosition(int fields, int timestamp, double latitude, 
     m_backend->gnssInjectLocation(latitude, longitude, accuracy.horizontal());
 }
 
-void HybrisProvider::injectUtcTime()
-{
-    qCDebug(lcGeoclueHybris) << "Time injection requested";
-
-    NetworkService *service = m_networkManager->defaultRoute();
-    if (!service) {
-        qCDebug(lcGeoclueHybris) << "No default network service";
-        return;
-    }
-
-    m_ntpServers = service->timeservers();
-    if (m_ntpServers.isEmpty()) {
-        qCDebug(lcGeoclueHybris) << service->name() << "doesn't advertise time servers";
-        return;
-    } else {
-        qCDebug(lcGeoclueHybris) << "Available time servers:" << m_ntpServers;
-    }
-
-    if (!m_ntpSocket) {
-        m_ntpSocket = new QUdpSocket(this);
-        connect(m_ntpSocket, SIGNAL(readyRead()), this, SLOT(handleNtpResponse()));
-        m_ntpSocket->bind();
-    }
-
-    m_ntpRetryTimer.start(10000, this);
-
-    sendNtpRequest();
-}
-
 struct NtpShort {
     quint16 seconds;
     quint16 fraction;
@@ -762,60 +709,8 @@ void HybrisProvider::agpsStatus(qint16 type, quint16 status, const QHostAddress 
 
     qCDebug(lcGeoclueHybris) << "AGNSS type:" << type << "status:" << status;
 
-    if (!m_agpsEnabled) {
-        m_backend->aGnssDataConnFailed();
-        return;
-    }
-
-    if (type != HYBRIS_AGNSS_TYPE_SUPL) {
-        qWarning("Only SUPL AGPS is supported.");
-        return;
-    }
-
-    switch (status) {
-    case HYBRIS_GNSS_REQUEST_AGNSS_DATA_CONN:
-        startDataConnection();
-        break;
-    case HYBRIS_GNSS_RELEASE_AGNSS_DATA_CONN:
-        // Immediately inform that connection is closed.
-        m_backend->aGnssDataConnClosed();
-        stopDataConnection();
-        break;
-    case HYBRIS_GNSS_AGNSS_DATA_CONNECTED:
-        break;
-    case HYBRIS_GNSS_AGNSS_DATA_CONN_DONE:
-        break;
-    case HYBRIS_GNSS_AGNSS_DATA_CONN_FAILED:
-        break;
-    default:
-        qWarning("Unknown AGPS Status.");
-    }
-}
-
-void HybrisProvider::dataServiceConnected()
-{
-    qCDebug(lcGeoclueHybris) << "Data service connected";
-
-    if (!m_agpsOnlineEnabled)
-        return;
-
-    QVector<NetworkService*> services = m_networkManager->getServices(QStringLiteral("cellular"));
-    Q_FOREACH (NetworkService *service, services) {
-        if (!service->connected())
-            continue;
-
-        qCDebug(lcGeoclueHybris) << "Connected to" << service->name();
-        m_agpsInterface = service->ethernet().value(QStringLiteral("Interface")).toString();
-        if (!m_agpsInterface.isEmpty()) {
-            m_networkServicePath = service->path();
-            processConnectionContexts();
-            return;
-        }
-
-        qWarning("Network service does not have a network interface associated with it.");
-    }
-
-    qWarning("No connected cellular network service found.");
+    qWarning("AGPS is not supported.");
+    return;
 }
 
 void HybrisProvider::connectionErrorReported(const QString &path, const QString &error)
@@ -875,81 +770,13 @@ void HybrisProvider::engineOff()
     m_fixLostTimer.stop();
 }
 
-void HybrisProvider::technologiesChanged()
-{
-    if (m_cellularTechnology) {
-        disconnect(m_cellularTechnology, SIGNAL(connectedChanged(bool)),
-                   this, SLOT(cellularConnected(bool)));
-    }
-
-    m_cellularTechnology = m_networkManager->getTechnology(QStringLiteral("cellular"));
-
-    if (m_cellularTechnology) {
-        qCDebug(lcGeoclueHybris) << "Cellular technology available and"
-                                 << (m_cellularTechnology->connected() ? "connected" : "not connected");
-        connect(m_cellularTechnology, SIGNAL(connectedChanged(bool)),
-                this, SLOT(cellularConnected(bool)));
-    } else {
-        qCDebug(lcGeoclueHybris) << "Cellular technology not available";
-    }
-}
-
 void HybrisProvider::stateChanged(const QString &state)
 {
     if (state == "online" && m_gpsStarted) {
         if (m_useForcedXtraInject) {
             gnssXtraDownloadRequest();
         }
-        if (m_useForcedNtpInject) {
-            injectUtcTime();
-        }
     }
-}
-
-void HybrisProvider::defaultDataModemChanged(const QString &modem)
-{
-    qCDebug(lcGeoclueHybris) << "Default data modem changed to" << modem;
-
-    m_connectionManager->setModemPath(modem);
-}
-
-void HybrisProvider::connectionManagerValidChanged()
-{
-    qCDebug(lcGeoclueHybris) << "Connection manager valid changed";
-
-    if (m_agpsOnlineEnabled && !m_agpsInterface.isEmpty())
-        processConnectionContexts();
-}
-
-void HybrisProvider::connectionContextValidChanged()
-{
-    qCDebug(lcGeoclueHybris) << "Connection context valid changed";
-
-    if (!m_agpsOnlineEnabled)
-        return;
-
-    if (m_connectionContext->isValid() &&
-        m_connectionContext->settings().value(QStringLiteral("Interface")) == m_agpsInterface) {
-        const QByteArray apn = m_connectionContext->accessPointName().toLocal8Bit();
-        const QString protocol = m_connectionContext->protocol();
-
-        qCDebug(lcGeoclueHybris) << "Found connection context APN" << apn;
-
-        m_agpsInterface.clear();
-        m_connectionContext->deleteLater();
-        m_connectionContext = 0;
-
-        m_backend->aGnssDataConnOpen(apn.constData(), protocol);
-    } else {
-        processNextConnectionContext();
-    }
-}
-
-void HybrisProvider::cellularConnected(bool connected)
-{
-    qCDebug(lcGeoclueHybris) << "Cellular connected" << connected;
-    if (connected)
-        dataServiceConnected();
 }
 
 void HybrisProvider::emitLocationChanged()
@@ -1029,13 +856,8 @@ void HybrisProvider::startPositioningIfNeeded()
 
     m_gpsStarted = true;
 
-    if (m_networkManager->state() == "online") {
-        if (m_useForcedXtraInject) {
-            gnssXtraDownloadRequest();
-        }
-        if (m_useForcedNtpInject) {
-            injectUtcTime();
-        }
+    if (m_useForcedXtraInject) {
+        gnssXtraDownloadRequest();
     }
 }
 
@@ -1103,57 +925,6 @@ quint32 HybrisProvider::minimumRequestedUpdateInterval() const
     return qMax(updateInterval, MinimumInterval);
 }
 
-void HybrisProvider::startDataConnection()
-{
-    qCDebug(lcGeoclueHybris) << "Start data connection";
-
-    if (!m_agpsOnlineEnabled) {
-        qCDebug(lcGeoclueHybris) << "Online aGPS not enabled, not starting data connection.";
-        m_backend->aGnssDataConnFailed();
-        return;
-    }
-
-    // Check if existing cellular network service is connected
-    NetworkTechnology *technology = m_networkManager->getTechnology(QStringLiteral("cellular"));
-    if (technology && technology->connected()) {
-        qCDebug(lcGeoclueHybris) << technology << technology->type()
-                                 << (technology->connected() ? "connected" : "not connected")
-                                 << (technology->powered() ? "powered" : "not powered");
-        dataServiceConnected();
-        return;
-    }
-
-    // No data connection, ask connection agent to connect to a cellular service
-    connect(m_connectiond, SIGNAL(errorReported(QString,QString)),
-            this, SLOT(connectionErrorReported(QString,QString)));
-    connect(m_connectionSelector, SIGNAL(connectionSelectorClosed(bool)),
-            this, SLOT(connectionSelected(bool)));
-    m_connectiond->connectToType(QStringLiteral("cellular"));
-
-    m_requestedConnect = true;
-}
-
-void HybrisProvider::stopDataConnection()
-{
-    qCDebug(lcGeoclueHybris) << "Stop data connection";
-
-    if (!m_requestedConnect)
-        return;
-
-    disconnect(m_connectiond, SIGNAL(errorReported(QString,QString)),
-               this, SLOT(connectionErrorReported(QString,QString)));
-    disconnect(m_connectionSelector, SIGNAL(connectionSelectorClosed(bool)),
-               this, SLOT(connectionSelected(bool)));
-    m_requestedConnect = false;
-
-    if (!m_networkServicePath.isEmpty()) {
-        NetworkService service;
-        service.setPath(m_networkServicePath);
-        service.requestDisconnect();
-        m_networkServicePath.clear();
-    }
-}
-
 void HybrisProvider::sendNtpRequest()
 {
     qCDebug(lcGeoclueHybris) << "Send NTP request. Servers:" << m_ntpServers;
@@ -1173,42 +944,4 @@ void HybrisProvider::sendNtpRequest()
 
     if (m_ntpServers.isEmpty())
         m_ntpRetryTimer.stop();
-}
-
-void HybrisProvider::processConnectionContexts()
-{
-    if (!m_connectionManager->isValid()) {
-        qCDebug(lcGeoclueHybris) << "Connection manager is not yet valid.";
-        return;
-    }
-
-    m_connectionContexts = m_connectionManager->contexts();
-    processNextConnectionContext();
-}
-
-void HybrisProvider::processNextConnectionContext()
-{
-    qCDebug(lcGeoclueHybris) << "Remaining connection contexts to check:" << m_connectionContexts;
-
-    if (m_connectionContexts.isEmpty()) {
-        qWarning("Could not determine APN for active cellular connection.");
-
-        m_agpsInterface.clear();
-        delete m_connectionContext;
-        m_connectionContext = 0;
-
-        m_backend->aGnssDataConnFailed();
-
-        return;
-    }
-
-    if (!m_connectionContext) {
-        m_connectionContext = new QOfonoConnectionContext(this);
-        connect(m_connectionContext, SIGNAL(validChanged(bool)),
-                this, SLOT(connectionContextValidChanged()));
-    }
-
-    const QString contextPath = m_connectionContexts.takeFirst();
-    qCDebug(lcGeoclueHybris) << "Getting APN for" << contextPath;
-    m_connectionContext->setContextPath(contextPath);
 }

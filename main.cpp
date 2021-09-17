@@ -21,9 +21,9 @@ int main(int argc, char *argv[])
 #if QT_VERSION >= QT_VERSION_CHECK(5, 3, 0)
     QCoreApplication::setSetuidAllowed(true);
 #endif
-    QLoggingCategory::setFilterRules(QStringLiteral("geoclue.provider.hybris.debug=false\n"
-                                                    "geoclue.provider.hybris.nmea.debug=false\n"
-                                                    "geoclue.provider.hybris.position.debug=false"));
+    QLoggingCategory::setFilterRules(QStringLiteral("geoclue.provider.hybris.debug=true\n"
+                                                    "geoclue.provider.hybris.nmea.debug=true\n"
+                                                    "geoclue.provider.hybris.position.debug=true"));
     QCoreApplication a(argc, argv);
 
     QDBusConnection session = QDBusConnection::sessionBus();

@@ -40,7 +40,6 @@ class ComJollaConnectiondInterface;
 class ComJollaLipstickConnectionSelectorIfInterface;
 class MGConfItem;
 class DeviceControl;
-class NetworkManager;
 class NetworkTechnology;
 class QOfonoExtModemManager;
 class QOfonoConnectionManager;
@@ -127,7 +126,6 @@ private slots:
     void locationEnabledChanged();
     void injectPosition(int fields, int timestamp, double latitude, double longitude,
                         double altitude, const Accuracy &accuracy);
-    void injectUtcTime();
     void sendNtpRequest(const QHostInfo &host);
     void handleNtpResponse();
     void xtraDownloadRequest();
@@ -135,7 +133,6 @@ private slots:
     void xtraDownloadFinished();
     void agpsStatus(qint16 type, quint16 status, const QHostAddress &ipv4,
                     const QHostAddress &ipv6, const QByteArray &ssid, const QByteArray &password);
-    void dataServiceConnected();
     void connectionErrorReported(const QString &path, const QString &error);
     void connectionSelected(bool selected);
 
@@ -144,12 +141,7 @@ private slots:
     void engineOn();
     void engineOff();
 
-    void technologiesChanged();
     void stateChanged(const QString &state);
-    void defaultDataModemChanged(const QString &modem);
-    void connectionManagerValidChanged();
-    void connectionContextValidChanged();
-    void cellularConnected(bool connected);
 
 private:
     void loadDefaultsFromConfigurationFile();
@@ -215,10 +207,6 @@ private:
     bool m_requestedConnect;
 
     bool m_gpsStarted;
-
-    NetworkManager *m_networkManager;
-    NetworkTechnology *m_cellularTechnology;
-    NetworkTechnology *m_wifiTechnology;
 
     QOfonoExtModemManager *m_ofonoExtModemManager;
     QOfonoConnectionManager *m_connectionManager;
