@@ -23,8 +23,6 @@
 
 #include "hybrislocationbackend.h"
 
-#include <locationsettings.h>
-
 #include "locationtypes.h"
 
 Q_DECLARE_LOGGING_CATEGORY(lcGeoclueHybris)
@@ -56,8 +54,6 @@ friend class HybrisBackend;
 public:
     explicit HybrisProvider(QObject *parent = 0);
     ~HybrisProvider();
-
-    void setLocationSettings(LocationSettings *settings);
 
     // org.freedesktop.Geoclue
     void AddReference();
@@ -219,8 +215,6 @@ private:
     bool m_requestedConnect;
 
     bool m_gpsStarted;
-
-    LocationSettings *m_locationSettings;
 
     NetworkManager *m_networkManager;
     NetworkTechnology *m_cellularTechnology;

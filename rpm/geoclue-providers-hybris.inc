@@ -5,10 +5,6 @@ Source: %{name}-%{version}.tar.gz
 BuildRequires: pkgconfig(Qt5Core)
 BuildRequires: pkgconfig(Qt5DBus)
 BuildRequires: pkgconfig(Qt5Network)
-BuildRequires: pkgconfig(connman-qt5) >= 1.0.68
-BuildRequires: pkgconfig(qofono-qt5)
-BuildRequires: pkgconfig(qofonoext)
-BuildRequires: pkgconfig(systemsettings) >= 0.5.5
 BuildRequires: systemd
 Requires: connectionagent-qt5 >= 0.9.20
 

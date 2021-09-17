@@ -150,7 +150,7 @@ const QDBusArgument &operator>>(const QDBusArgument &argument, QList<SatelliteIn
 HybrisProvider::HybrisProvider(QObject *parent)
 :   QObject(parent), m_backend(Q_NULLPTR),
     m_status(StatusUnavailable), m_positionInjectionConnected(false), m_xtraDownloadReply(Q_NULLPTR), m_xtraServerIndex(0),
-    m_requestedConnect(false), m_gpsStarted(false), m_locationSettings(Q_NULLPTR),
+    m_requestedConnect(false), m_gpsStarted(false),
     m_networkManager(new NetworkManager(this)), m_cellularTechnology(Q_NULLPTR),
     m_ofonoExtModemManager(new QOfonoExtModemManager(this)),
     m_connectionManager(new QOfonoConnectionManager(this)), m_connectionContext(Q_NULLPTR), m_ntpSocket(Q_NULLPTR),
@@ -315,27 +315,6 @@ void HybrisProvider::loadDefaultsFromConfigurationFile()
         if (m_suplPort == 0 && key == "SUPL_PORT") {
             m_suplPort = split.at(1).trimmed().toInt();
         }
-    }
-}
-
-void HybrisProvider::setLocationSettings(LocationSettings *settings)
-{
-    if (!m_locationSettings) {
-        m_locationSettings = settings;
-        connect(m_locationSettings, &LocationSettings::locationEnabledChanged,
-                this, &HybrisProvider::locationEnabledChanged);
-        connect(m_locationSettings, &LocationSettings::allowedDataSourcesChanged,
-                this, &HybrisProvider::locationEnabledChanged);
-        connect(m_locationSettings, &LocationSettings::gpsEnabledChanged,
-                this, &HybrisProvider::locationEnabledChanged);
-        connect(m_locationSettings, &LocationSettings::gpsFlightModeChanged,
-                this, &HybrisProvider::locationEnabledChanged);
-        connect(m_locationSettings, &LocationSettings::hereStateChanged,
-                this, &HybrisProvider::locationEnabledChanged);
-        connect(m_locationSettings, &LocationSettings::mlsEnabledChanged,
-                this, &HybrisProvider::locationEnabledChanged);
-        connect(m_locationSettings, &LocationSettings::mlsOnlineStateChanged,
-                this, &HybrisProvider::locationEnabledChanged);
     }
 }
 
@@ -556,12 +535,8 @@ void HybrisProvider::serviceUnregistered(const QString &service)
 
 void HybrisProvider::locationEnabledChanged()
 {
-    if (positioningEnabled()) {
-        startPositioningIfNeeded();
-    } else {
-        setLocation(Location());
-        stopPositioningIfNeeded();
-    }
+    setLocation(Location());
+    stopPositioningIfNeeded();
 }
 
 void HybrisProvider::injectPosition(int fields, int timestamp, double latitude, double longitude,
@@ -1022,10 +997,6 @@ void HybrisProvider::startPositioningIfNeeded()
     if (m_watchedServices.isEmpty())
         return;
 
-    // Positioning disabled externally
-    if (!positioningEnabled())
-        return;
-
     m_idleTimer.stop();
 
     if (!m_backend)
@@ -1075,7 +1046,7 @@ void HybrisProvider::stopPositioningIfNeeded()
         return;
 
     // Positioning enabled externally and positioning is still being used.
-    if (positioningEnabled() && !m_watchedServices.isEmpty())
+    if (!m_watchedServices.isEmpty())
         return;
 
     // Stop listening to all PositionChanged signals from org.freedesktop.Geoclue.Position
@@ -1106,25 +1077,6 @@ void HybrisProvider::setStatus(HybrisProvider::Status status)
 
     m_status = status;
     emit StatusChanged(m_status);
-}
-
-/*
-    Returns true if positioning is enabled, otherwise returns false.
-*/
-bool HybrisProvider::positioningEnabled()
-{
-    // Hybris AGPS mode doesn't have its own settings at the moment, so enabling if something related is
-    m_agpsEnabled = (m_locationSettings->hereAvailable() && m_locationSettings->hereState() == LocationSettings::OnlineAGpsEnabled)
-                 || (m_locationSettings->mlsAvailable()  && m_locationSettings->mlsEnabled());
-    m_agpsOnlineEnabled = (m_locationSettings->hereAvailable() && m_locationSettings->hereState() == LocationSettings::OnlineAGpsEnabled)
-                       || (m_locationSettings->mlsAvailable()  && m_locationSettings->mlsOnlineState() == LocationSettings::OnlineAGpsEnabled);
-
-    // enable GPS positioning if location and the GPS are enabled, and the GPS is not in flight mode - if it is allowed by MDM.
-    return m_locationSettings->locationEnabled()
-       &&  m_locationSettings->gpsAvailable()
-       &&  m_locationSettings->gpsEnabled()
-       && !m_locationSettings->gpsFlightMode()
-       && (m_locationSettings->allowedDataSources() & LocationSettings::GpsData);
 }
 
 quint32 HybrisProvider::minimumRequestedUpdateInterval() const

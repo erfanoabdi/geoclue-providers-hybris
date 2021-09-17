@@ -16,8 +16,6 @@
 
 #include "hybrisprovider.h"
 
-#include <locationsettings.h>
-
 int main(int argc, char *argv[])
 {
 #if QT_VERSION >= QT_VERSION_CHECK(5, 3, 0)
@@ -29,9 +27,7 @@ int main(int argc, char *argv[])
     QCoreApplication a(argc, argv);
 
     QDBusConnection session = QDBusConnection::sessionBus();
-    LocationSettings settings;
     HybrisProvider provider;
-    provider.setLocationSettings(&settings);
     if (!session.registerObject(QStringLiteral("/org/freedesktop/Geoclue/Providers/Hybris"), &provider))
         qFatal("Failed to register object /org/freedesktop/Geoclue/Providers/Hybris");
     if (!session.registerService(QStringLiteral("org.freedesktop.Geoclue.Providers.Hybris")))
